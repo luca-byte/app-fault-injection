@@ -1,9 +1,13 @@
 import argparse
+import datetime
+import json
 import os
+import time
 
 import torch
+from torch import nn
+from utils import *
 import torchvision
-from torchvision.datasets import STL10
 import torchvision.transforms as trsf
 from torch.backends import cudnn
 from torchmetrics.classification import MulticlassF1Score, MulticlassRecall, MulticlassPrecision
@@ -19,13 +23,11 @@ from pytorchfi.FI_Weights_classification import DatasetSampling
 from torch.utils.data import DataLoader, Subset
 
 logger = def_logger.getChild(__name__)
-#torch.multiprocessing.set_sharing_strategy('file_system')
 import logging
 
 def get_argparser():
     parser = argparse.ArgumentParser(description='Supervised compression for image classification tasks')
     parser.add_argument('--config', required=True, help='yaml file path')
-    parser.add_argument('--json', help='json string to overwrite config')
     parser.add_argument('--device', default='cuda', help='device')
     parser.add_argument('--log', help='log file path')
     parser.add_argument('--seed', type=int, help='seed in random number generator')
@@ -34,6 +36,18 @@ def get_argparser():
     parser.add_argument('-log_config', action='store_true', help='log config')
     parser.add_argument('--fsim_config', help='Yaml file path fsim config')
     return parser
+
+def get_transforms(split='train', input_size=(128, 128)):
+
+    transform = trsf.Compose([
+        trsf.Compose([
+        trsf.Resize((70, 70)),        
+        trsf.CenterCrop((64, 64)),            
+        trsf.ToTensor(),                
+        trsf.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
+    ])
+    return transform
+
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -48,24 +62,13 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].contiguous().view(-1).float().sum(0)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
-    
-
-def get_transforms(split='train', input_size=(128, 128)):
-
-    transform = trsf.Compose([
-        trsf.Compose([
-        trsf.Resize((70, 70)),        
-        trsf.CenterCrop((64, 64)),            
-        trsf.ToTensor(),                
-        trsf.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]),
-    ])
-    return transform
 
 @torch.inference_mode()
 def evaluate(model_wo_ddp, data_loader, device, device_ids, distributed, no_dp_eval=False,
              log_freq=1000, title=None, header='Test:', fsim_enabled=False, Fsim_setup:FI_manager = None, handles=None):
     
     model = model_wo_ddp.to(device)
+    
     if title is not None:
         logger.info(title)
 
@@ -105,7 +108,7 @@ def evaluate(model_wo_ddp, data_loader, device, device_ids, distributed, no_dp_e
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
         im+=1
     
-        if fsim_enabled==True:
+        if fsim_enabled==False:
             val_targ = val_targ.type(torch.int64)
             f1_1 = MulticlassF1Score(task='multiclass', num_classes=10, average='macro')
             rec_1 = MulticlassRecall(average='macro', num_classes=10)
@@ -149,7 +152,15 @@ def main(args):
     cudnn.enabled=True
     # cudnn.benchmark = True
     cudnn.deterministic = True
+    # The flag below controls whether to allow TF32 on matmul. This flag defaults to False
+    # in PyTorch 1.12 and later.
+    torch.backends.cuda.matmul.allow_tf32 = True
+    # The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
+    cudnn.allow_tf32 = True
+    
     set_seed(args.seed)
+
+    
     config = yaml_util.load_yaml_file(os.path.expanduser(args.config))
 
     device = torch.device(args.device)
@@ -161,41 +172,35 @@ def main(args):
     
     ckpt_file_path = '/home/bepi/Desktop/Ph.D_/projects/nvbitFI/code/checkpoint/mnasnet0_5.pth'
     dnn = torchvision.models.mnasnet0_5()
-    dnn.classifier = torch.nn.Sequential(
-            torch.nn.Dropout(0.2),  # Add dropout for regularization (optional)
-            torch.nn.Linear(1280, 10)  # Adjust the input size to match the MNASNet0.5 output features
+    dnn.classifier = nn.Sequential(
+            nn.Dropout(0.2),  # Add dropout for regularization (optional)
+            nn.Linear(1280, 10)  # Adjust the input size to match the MNASNet0.5 output features
         )
     dnn.load_state_dict(torch.load(ckpt_file_path)['state_dict'])
-
-
-    if args.log_config:
-        logger.info(config)
-
+    # dnn = rec_dnn_exploration_mf(dnn)
     test_config = config['test']
-    
+
+
     log_freq = test_config.get('log_freq', 1000)
     no_dp_eval = args.no_dp_eval
-        
+    
 
-    test_batch_size=config['test']['test_data_loader']['batch_size']
+    test_batch_size=1
     test_shuffle=config['test']['test_data_loader']['random_sample']
     test_num_workers=config['test']['test_data_loader']['num_workers']
-    subsampler = DatasetSampling(test_data_loader.dataset,10)
+    subsampler = DatasetSampling(test_data_loader.dataset,5)
     index_dataset=subsampler.listindex()
     data_subset=Subset(test_data_loader.dataset, index_dataset)
     dataloader = DataLoader(data_subset,batch_size=test_batch_size, shuffle=test_shuffle,pin_memory=True,num_workers=test_num_workers)
 
-
     if args.fsim_config:
         fsim_config_descriptor = yaml_util.load_yaml_file(os.path.expanduser(args.fsim_config))
-        conf_fault_dict=fsim_config_descriptor['fault_info']['neurons']
+        conf_fault_dict=fsim_config_descriptor['fault_info']['weights']
         cwd=os.getcwd() 
         dnn.eval() 
-        # student_model.deactivate_analysis()
-        # full_log_path=os.path.join(cwd,name_config)
         full_log_path=cwd
         # 1. create the fault injection setup
-        FI_setup=FI_manager(full_log_path,chpt_file_name='ckpt_FI.json',fault_report_name='fsim_report.csv')
+        FI_setup=FI_manager(full_log_path,"ckpt_FI.json","fsim_report.csv")
 
         # 2. Run a fault free scenario to generate the golden model
         FI_setup.open_golden_results("Golden_results")
@@ -205,46 +210,27 @@ def main(args):
 
         # 3. Prepare the Model for fault injections
         FI_setup.FI_framework.create_fault_injection_model(device,dnn,
-                                            batch_size=test_batch_size,
+                                            batch_size=1,
                                             input_shape=[3,32,32],
-                                            layer_types=[torch.nn.Conv2d, torch.nn.Linear],Neurons=True)
-        
-        # 4. generate the fault list
-        logging.getLogger('pytorchfi').disabled = False
-        #logging.getLogger('pytorchfi.neuron_error_models').disabled = True
-        FI_setup.generate_fault_list(flist_mode='neurons',
-                                    f_list_file='fault_list.csv',
-                                    layers=conf_fault_dict['layers'],
-                                    trials=conf_fault_dict['trials'], 
-                                    size_tail_y=conf_fault_dict['size_tail_y'], 
-                                    size_tail_x=conf_fault_dict['size_tail_x'],
-                                    block_fault_rate_delta=conf_fault_dict['block_fault_rate_delta'],
-                                    block_fault_rate_steps=conf_fault_dict['block_fault_rate_steps'],
-                                    neuron_fault_rate_delta=conf_fault_dict['neuron_fault_rate_delta'],
-                                    neuron_fault_rate_steps=conf_fault_dict['neuron_fault_rate_steps'])     
-        
+                                            layer_types=[torch.nn.Conv2d,torch.nn.Linear])
+
+        logging.getLogger('pytorchfi').disabled = True
+        FI_setup.generate_fault_list(flist_mode='static_ber_fixed_layr',f_list_file='fault_list.csv',layer=conf_fault_dict['layer'][0])    
         FI_setup.load_check_point()
 
         # 5. Execute the fault injection campaign
         for fault,k in FI_setup.iter_fault_list():
             # 5.1 inject the fault in the model
-            #FI_setup.FI_framework.bit_flip_weight_inj([fault[0]],[fault[1]],[fault[2]],[fault[3]],[fault[4]],[fault[5]])
-            handles = FI_setup.FI_framework.bit_flip_err_neuron(fault)
+            FI_setup.FI_framework.bit_flip_weight_inj(fault)
             FI_setup.open_faulty_results(f"F_{k}_results")
             try:   
                 # 5.2 run the inference with the faulty model 
                 evaluate(FI_setup.FI_framework.faulty_model, dataloader, device, device_ids, distributed, no_dp_eval=no_dp_eval,
-                    log_freq=log_freq, title='[DNN under test: {}]'.format(type(dnn)), header='FSIM', fsim_enabled=True,
-                    Fsim_setup=FI_setup, handles=handles)        
-            
-            except OSError as Oserr:
-                msg=f"Oserror: {Oserr}"
-                logger.info(msg)
-
+                    log_freq=log_freq, title='[DNN under test: {}]'.format(type(dnn)), header='FSIM', fsim_enabled=True,Fsim_setup=FI_setup)        
             except Exception as Error:
                 msg=f"Exception error: {Error}"
-                logger.info(msg)            
-            # 5.3 Report the results of the fault injection campaign
+                logger.info(msg)
+            # 5.3 Report the results of the fault injection campaign            
             FI_setup.parse_results()
             # break
         FI_setup.terminate_fsim()

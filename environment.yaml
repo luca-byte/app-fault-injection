@@ -1,4 +1,4 @@
-name: sc2-benchmark
+name: APP_FSIM
 channels:
   - conda-forge
   - defaults
@@ -60,4 +60,4 @@ dependencies:
     - torchvision==0.13.0+cu116
     - torchdistill==0.3.3
     - typing-extensions==4.0.0
-prefix: /home/jguerrero/miniconda3/envs/sc2-benchmark
+prefix: ~/miniconda3/envs/APP_FSIM

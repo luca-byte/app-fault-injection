@@ -1,14 +1,7 @@
 #!/bin/bash
 
-source ~/miniconda3/bin/activate
-conda deactivate
+source ~/miniconda3/bin/activate APP_FI
 
-cd  /home/jguerrero/Workspace/GitHub/sc2-benchmark
-
-conda activate sc2-benchmark
-
-which pip
-which python
 
 PWD=`pwd`
 Global_path="$PWD"
@@ -21,6 +14,6 @@ echo $folder
 echo $workers
 echo ${Global_path}/${folder}
 
-python ${Global_path}/SC_Fault_injections/SLURM_scripts/crbq/merge_reports.py --path ${Global_path}/${folder} --workers ${workers}
+python ${Global_path}/code/APP_Fault_injections/bash/crbq/merge_reports.py --path ${Global_path}/${folder} --workers ${workers}
 
 echo "merge finishied"

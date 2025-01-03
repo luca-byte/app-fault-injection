@@ -22,7 +22,6 @@ def merge_fsim_reports(path):
 
                 for rep_per_fault in csvfiles:
                     os.remove(os.path.join(path,rep_per_fault))         
-        
         fault_list_file=os.path.join(path,"fault_list.csv")
         fsim_report_file=os.path.join(path,"fsim_report.csv")
         fault_list= pd.read_csv(fault_list_file,index_col=[0]) 
@@ -39,9 +38,6 @@ def merge_fsim_reports(path):
                           values=['G_pred', 'F_pred', 'G_clas', 'F_clas'])
         df_pivot.columns = [f'{col}{idx}' for col, idx in df_pivot.columns]
         df_pivot = df_pivot.reset_index()
-        
-        #df_pivot = df_pivot[['FaultID','imID','Pred_idx','G_pred','F_pred','G_clas','F_clas','G_Target']]
-        #df_pivot.to_csv(os.path.join(args.path,"Misclassified_images_report.csv")) 
         
         FaultID=[f"F_{item}_results" for item in range(len(flist))]
         FaultID_col=pd.DataFrame({"FaultID":FaultID})
