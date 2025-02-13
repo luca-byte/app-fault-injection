@@ -158,7 +158,7 @@ def evaluate(model_wo_ddp, data_loader, device, device_ids, distributed, no_dp_e
     logger.info(' * Acc@1 {:.4f}\tAcc@5 {:.4f}'.format(top1_accuracy, top5_accuracy))
     return metric_logger.acc1.global_avg
 
-
+@torch.no_grad()
 def main():
     log_file_path = log
     if is_main_process() and log_file_path is not None:
