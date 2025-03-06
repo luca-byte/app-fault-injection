@@ -58,10 +58,7 @@ class LeNet(nn.Module):
 
 transformer = ToTensor()
 layer = 0
-index = 10
 
-log = f"MNIST-cls/L{layer}-{index}/log/LeNet.log"
-wdir = f"MNIST-cls/L{layer}-{index}"
 seed = None
 device = torch.device("cuda")
 dataset = torchvision.datasets.MNIST(
@@ -73,8 +70,6 @@ batch_size = 1
 shuffle = False
 num_workers = 16
 shape = [1, 28, 28]
-
-class_chosen = 0
 
 n = None
 
@@ -177,10 +172,12 @@ def evaluate(model_wo_ddp, data_loader, device, device_ids, distributed, no_dp_e
     return metric_logger.acc1.global_avg
 
 @torch.no_grad()
-def main():
+def main(class_chosen=0):
+    wdir = f"MNIST-cls/L{layer}-{class_chosen}"
+    log_file_path = f"{wdir}/log/LeNet.log"
+
     logging.getLogger("FM-X").disabled = True
 
-    log_file_path = log
     if is_main_process() and log_file_path is not None:
         setup_log_file(os.path.expanduser(log_file_path))
 
@@ -322,4 +319,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    for i in range(10):
+        main(i)
