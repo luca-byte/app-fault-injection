@@ -1,4 +1,4 @@
-from torchvision.transforms import ToTensor
+import torchvision.transforms as transforms
 import torch.nn as nn
 import torch
 import os
@@ -10,6 +10,7 @@ from torchdistill.common.constant import def_logger
 from torch.backends import cudnn
 from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
+import math
 
 from pytorchfi.FI_Weights_classification import FI_manager
 from pytorchfi.FI_Weights_classification import DatasetSampling
@@ -25,65 +26,78 @@ import pandas as pd
 
 logger = def_logger.getChild(__name__)
 
+class TinyVGG(nn.Module):
+    def __init__(self, input_shape=3, hidden_units=64, image_dimension=32, output_shape=10):
+        linear_in = image_dimension**2 //16 * hidden_units
 
-class LeNet(nn.Module):
-    def __init__(self, input_channels=1, image_dimension=28, output_classes=10):
-        super(LeNet, self).__init__()
-        self.lin_dim = (image_dimension//4 -3)**2 * 16
-
-        self.conv_block1 = nn.Sequential(
-            nn.Conv2d(input_channels, 6, kernel_size=5, stride=1, padding=0),
+        super().__init__()
+        self.block_1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=input_shape,
+                out_channels=hidden_units,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            ),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-        )
-        self.conv_block2 = nn.Sequential(
-            nn.Conv2d(6, 16, kernel_size=5, stride=1, padding=0),
+            nn.Conv2d(
+                in_channels=hidden_units,
+                out_channels=hidden_units,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            ),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(kernel_size=2, stride=2)
         )
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(self.lin_dim, 120)  # 5*5 from image dimension
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, output_classes)
 
-    def forward(self, x):
-        x = self.conv_block1(x)
-        x = self.conv_block2(x)
-        x = x.view(-1, self.lin_dim)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        self.block_2 = nn.Sequential(
+            nn.Conv2d(hidden_units, hidden_units, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(hidden_units, hidden_units, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=linear_in, out_features=output_shape)
+        )
+
+    def forward(self, x: torch.Tensor):
+        x = self.block_1(x)
+        x = self.block_2(x)
+        x = self.classifier(x)
         return x
-
-
+    
 print("CUDA Available: ", torch.cuda.is_available())
 
-transformer = ToTensor()
+transformer = transforms.ToTensor()
 layer = 0
 index = 0
 
-log = f"MNIST-T/L{layer}-{index}/log/LeNet.log"
-wdir = f"MNIST-T/L{layer}-{index}"
+log = f"CIFAR-TV/L{layer}-{index}/log/LeNet.log"
+wdir = f"CIFAR-TV/L{layer}-{index}"
 seed = None
 device = torch.device("cuda")
-dataset = torchvision.datasets.MNIST(
-    "~/dataset/mnist", transform=transformer, download=True, train=False
+dataset = torchvision.datasets.CIFAR10(
+    "~/dataset/cifar", transform=transformer, download=True, train=False
 )
-model_path = "MNIST-T/LeNet-MNIST.pth"
+model_path = "CIFAR-TV/TinyVGG_CIFAR10.pth"
 
 batch_size = 1
 shuffle = False
 num_workers = 16
 shape = [1, 28, 28]
 
-n = 1
+n = None
 
 block = layer
-pre_path = "MNIST-T/MNIST-T.json"
+pre_path = "CIFAR-TV/CIFAR-0.json"
 
 feat_ex = Preprocessing.load(pre_path, use_scaler=True)
 
-ext_clf = ModelTrainer.load("MNIST-T/MNIST-T.pth", 33, 10)
+ext_clf = ModelTrainer.load("CIFAR-TV/CIFAR-0.pth", 128, 10)
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -196,8 +210,8 @@ def main():
         dataset=dataset, batch_size=128, shuffle=True, pin_memory=True
     )
 
-    dnn = LeNet()
-    dnn.load_state_dict(torch.load(model_path, weights_only=True))
+    dnn = TinyVGG()
+    dnn.load_state_dict(torch.load(model_path))
     dnn.eval()
 
     
