@@ -163,7 +163,7 @@ model_path = "CIFAR-MN/MobileNetV2_CIFAR10.pth"
 batch_size = 1
 shuffle = False
 num_workers = 16
-shape = [1, 28, 28]
+shape = [3, 32, 32]
 
 n = None
 
@@ -172,7 +172,7 @@ pre_path = "CIFAR-MN/CIFAR-MN-0.json"
 
 feat_ex = Preprocessing.load(pre_path, use_scaler=True)
 
-ext_clf = ModelTrainer.load("CIFAR-MN/CIFAR-MN-0.pth", 128, 10)
+ext_clf = ModelTrainer.load("CIFAR-MN/CIFAR-MN-0.pth", 130, 10)
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -285,7 +285,7 @@ def main():
         dataset=dataset, batch_size=128, shuffle=True, pin_memory=True
     )
 
-    dnn = MobileNetV2()
+    dnn = MobileNetV2(10)
     dnn.load_state_dict(torch.load(model_path))
     dnn.eval()
 
