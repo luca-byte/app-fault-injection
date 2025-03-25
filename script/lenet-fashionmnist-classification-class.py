@@ -203,7 +203,7 @@ def main(class_chosen):
 
     subsampler = DatasetSampling(class_zero_subset, 300)
     index_dataset = subsampler.listindex()
-    data_subset = Subset(test_data_loader.dataset, index_dataset)
+    data_subset = Subset(class_zero_subset, index_dataset)
     dataloader = DataLoader(
         data_subset,
         batch_size=batch_size,
