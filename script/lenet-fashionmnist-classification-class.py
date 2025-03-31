@@ -64,7 +64,7 @@ device = torch.device("cuda")
 dataset = torchvision.datasets.FashionMNIST(
     "~/dataset/fmnist", transform=transformer, download=True, train=False
 )
-model_path = "FMNIST-T/LeNet_FashionMNIST.pth"
+model_path = "FMNIST-cls/LeNet_FashionMNIST.pth"
 
 batch_size = 1
 shuffle = False
@@ -74,11 +74,11 @@ shape = [1, 28, 28]
 n = None
 
 block = layer
-pre_path = "FMNIST-T/FMNIST-T.json"
+pre_path = "FMNIST-cls/FMNIST-T.json"
 
 feat_ex = Preprocessing.load(pre_path, use_scaler=True)
 
-ext_clf = ModelTrainer.load("FMNIST-T/FMNIST-T.pth", 35, 10)
+ext_clf = ModelTrainer.load("FMNIST-cls/FMNIST-T.pth", 35, 10)
 
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
@@ -194,7 +194,7 @@ def main(class_chosen):
     )
 
     dnn = LeNet()
-    dnn.load_state_dict(torch.load(model_path, weights_only=True))
+    dnn.load_state_dict(torch.load(model_path))
     dnn.eval()
 
     # Select only images of class zero
