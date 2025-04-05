@@ -200,7 +200,7 @@ def main():
 
     
 
-    subsampler = DatasetSampling(test_data_loader.dataset, 5)
+    subsampler = DatasetSampling(test_data_loader.dataset, 30)
     index_dataset = subsampler.listindex()
     data_subset = Subset(test_data_loader.dataset, index_dataset)
     dataloader = DataLoader(
