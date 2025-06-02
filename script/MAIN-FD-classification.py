@@ -25,6 +25,7 @@ import argparse
 logger = def_logger.getChild(__name__)
 
 seed = None
+n = None
 device = torch.device("cuda")
 
 def accuracy(output, target, topk=(1,)):
@@ -118,20 +119,20 @@ def evaluate(model_wo_ddp, data_loader, device, device_ids, distributed, no_dp_e
     logger.info(' * Acc@1 {:.4f}\tAcc@5 {:.4f}'.format(top1_accuracy, top5_accuracy))
     return metric_logger.acc1.global_avg
 
-def get_subsampler(dataset, clazz=-1, shuffle=False, batch_size=1, num_workers=16):
+def get_subsampler(dataset, num, clazz=-1, shuffle=False, batch_size=1, num_workers=16):
     test_data_loader = DataLoader(
         dataset=dataset, batch_size=128, shuffle=True, pin_memory=True
     )
 
     if clazz == -1:
-        subsampler = DatasetSampling(test_data_loader.dataset, 5)
+        subsampler = DatasetSampling(test_data_loader.dataset, num)
         index_dataset = subsampler.listindex()
         data_subset = Subset(test_data_loader.dataset, index_dataset)
     else:
         class_zero_indices = [i for i, (_, target) in enumerate(test_data_loader.dataset) if target == clazz]
         class_zero_subset = Subset(test_data_loader.dataset, class_zero_indices)
 
-        subsampler = DatasetSampling(class_zero_subset, 300)
+        subsampler = DatasetSampling(class_zero_subset, num)
         index_dataset = subsampler.listindex()
         data_subset = Subset(class_zero_subset, index_dataset)
     
@@ -144,7 +145,7 @@ def get_subsampler(dataset, clazz=-1, shuffle=False, batch_size=1, num_workers=1
     )
 
 @torch.no_grad()
-def main(name, dataset, dnn, layer, shape, feat_ex, ext_clf, clazz, n=None):
+def main(name, dataset, dnn, layer, shape, feat_ex, ext_clf, num, clazz):
     if clazz==-1:
         wdir = f"{name}/L{layer}"
     else: 
@@ -166,8 +167,8 @@ def main(name, dataset, dnn, layer, shape, feat_ex, ext_clf, clazz, n=None):
     set_seed(seed)
 
     dnn.eval()
-    dataloader = get_subsampler(dataset, clazz)
-    block=layer
+    dataloader = get_subsampler(dataset, num, clazz)
+    block=0
     
 
     # 1. Setup FI
@@ -277,7 +278,7 @@ if __name__ == "__main__":
         "--pair",
         type=str,
         required=True,
-        choices=["lenet-mnist", "lenet-fmnist", "mobilenet-cifar", "mobilenet-mnist", "mobilenet-fmnist"],
+        choices=["lenet-mnist", "lenet-fmnist", "lenetdrop-cifar", "mobilenet-cifar", "mobilenet-mnist", "mobilenet-fmnist", 'resnet-cifar', 'resnet-mnist', 'resnet-fmnist'],
         help="Choose the model, dataset pair"
     )
     parser.add_argument("--separate-classes", default=False, help="Evaluate classes separately")
@@ -286,21 +287,40 @@ if __name__ == "__main__":
 
     if args.pair == "mobilenet-cifar":
         data = get_mobilenet_cifar(args.separate_classes, args.layer)
-        dataset = data["dataset"]
-        model = data["model"]
-        layer = data["layer"]
-        shape = data["shape"]
-        feat_ex = data["prep"]
-        ext_clf = data["ext_clf"]
-        classes = data["classes"]
-        name = data["name"]
+    elif args.pair == "mobilenet-mnist":
+        data = get_mobilenet_mnist(args.separate_classes, args.layer)
+    elif args.pair == "mobilenet-fmnist":
+        data = get_mobilenet_fmnist(args.separate_classes, args.layer)
+    elif args.pair == "lenet-mnist":
+        data = get_lenet_mnist(args.separate_classes, args.layer)
+    elif args.pair == "lenet-fmnist":
+        data = get_lenet_fmnist(args.separate_classes, args.layer)
+    elif args.pair == "lenetdrop-cifar":
+        data = get_lenetdrop_cifar(args.separate_classes, args.layer)
+    elif args.pair == "resnet-cifar":
+        data = get_resnet_cifar(args.separate_classes, args.layer)
+    elif args.pair == "resnet-mnist":
+        data = get_resnet_mnist(args.separate_classes, args.layer)
+    elif args.pair == "resnet-fmnist":
+        data = get_resnet_fmnist(args.separate_classes, args.layer)
+
     else: pass
+
+    dataset = data["dataset"]
+    model = data["model"]
+    layer = data["layer"]
+    shape = data["shape"]
+    feat_ex = data["prep"]
+    ext_clf = data["ext_clf"]
+    classes = data["classes"]
+    name = data["name"]
+    num = data["num"]
 
     if classes:
         for i in range(10):
-            main(name, dataset, model, layer, shape, feat_ex, ext_clf, clazz=i)
+            main(name, dataset, model, layer, shape, feat_ex, ext_clf, num, clazz=i)
     else:
-        main(name, dataset, model, layer, shape, feat_ex, ext_clf, clazz=-1)
+        main(name, dataset, model, layer, shape, feat_ex, ext_clf, num, clazz=-1)
 
     
 
